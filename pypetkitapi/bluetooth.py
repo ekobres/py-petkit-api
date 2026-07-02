@@ -8,7 +8,11 @@ import logging
 from typing import TYPE_CHECKING
 import urllib.parse
 
-from pypetkitapi.command import FOUNTAIN_COMMAND, FountainAction
+from pypetkitapi.command import (
+    BLE_WATER_FOUNTAIN_COMMAND,
+    BleWaterFountainAction,
+    FountainAction,
+)
 from pypetkitapi.const import (
     BLE_CONNECT_ATTEMPT,
     BLE_END_TRAME,
@@ -21,7 +25,8 @@ from pypetkitapi.const import (
 from pypetkitapi.containers import BleRelay
 
 if TYPE_CHECKING:
-    from pypetkitapi import PetKitClient, WaterFountain
+    from pypetkitapi import PetKitClient
+    from pypetkitapi.ble_water_fountain_container import BleWaterFountain
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -34,15 +39,15 @@ class BluetoothManager:
         self.client = client
         self._debug_test = kwargs.get(PTK_DBG, False)
 
-    async def _get_fountain_instance(self, fountain_id: int) -> "WaterFountain":
-        """Get the WaterFountain instance for the given fountain_id.
+    async def _get_fountain_instance(self, fountain_id: int) -> "BleWaterFountain":
+        """Get the BleWaterFountain instance for the given fountain_id.
         :param fountain_id: The ID of the fountain to get the instance for.
-        :return: The WaterFountain instance for the given fountain_id.
+        :return: The BleWaterFountain instance for the given fountain_id.
         """
-        from pypetkitapi.water_fountain_container import WaterFountain
+        from pypetkitapi.ble_water_fountain_container import BleWaterFountain
 
         water_fountain = self.client.petkit_entities.get(fountain_id)
-        if not isinstance(water_fountain, WaterFountain):
+        if not isinstance(water_fountain, BleWaterFountain):
             _LOGGER.error("Water fountain with ID %s not found.", fountain_id)
             raise TypeError(f"Water fountain with ID {fountain_id} not found.")
         if water_fountain.device_nfo is None:
@@ -88,7 +93,7 @@ class BluetoothManager:
     async def _request_ble_api(
         self,
         endpoint: PetkitEndpoint,
-        fountain: "WaterFountain",
+        fountain: "BleWaterFountain",
         extra_data: dict | None = None,
     ):
         """API Bluetooth request method"""
@@ -213,7 +218,9 @@ class BluetoothManager:
         b64_encoded = base64.b64encode(byte_array)
         return urllib.parse.quote(b64_encoded)
 
-    async def send_ble_command(self, fountain_id: int, command: FountainAction) -> bool:
+    async def send_ble_command(
+        self, fountain_id: int, command: BleWaterFountainAction | FountainAction
+    ) -> bool:
         """Send the given BLE command to the fountain_id.
         :param fountain_id: The ID of the fountain to send the command to.
         :param command: The command to send to the fountain.
@@ -229,7 +236,7 @@ class BluetoothManager:
             )
             return False
 
-        command_data = FOUNTAIN_COMMAND.get(command)
+        command_data = BLE_WATER_FOUNTAIN_COMMAND.get(command)
         if command_data is None:
             _LOGGER.error(
                 "BLE fountain command '%s' not found (id %s)", command, fountain_id

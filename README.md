@@ -45,7 +45,7 @@ PetKit Client is a Python library for interacting with the PetKit API. It allows
 
 - Login and session management
 - Fetch account and device data
-- Control PetKit devices (Feeder, Litter Box, Water Fountain, Purifiers)
+- Control PetKit devices (Feeder, Litter Box, BLE Water Fountain, Cloud Water Fountain, Purifiers)
 - Fetch images & videos produced by devices
   > Pictures are available **with or without** Care+ subscription, Videos are only available **with** Care+ subscription
 
@@ -283,33 +283,91 @@ await client.send_api_request(device_id, LitterCommand.RESET_N50_DEODORIZER)
 
 ---
 
-### `FountainAction.RESET_FILTER` _(need a BLE relay)_
+### `FountainCommand.FILTER_RESET`
+
+Resets the filter replacement counter on cloud water fountains (W7H).
+
+```python
+await client.send_api_request(device_id, FountainCommand.FILTER_RESET)
+```
+
+---
+
+### BLE Water Fountain commands
+
+BLE water fountains (W4, W5, CTW2, CTW3) require a BLE relay device. Use `BleWaterFountainAction` (alias `FountainAction`) via `bluetooth_manager.send_ble_command()`.
+
+#### `BleWaterFountainAction.RESET_FILTER` _(need a BLE relay)_
 
 Sends a BLE command to the water fountain to reset the filter replacement counter.
 
 ```python
-await client.bluetooth_manager.send_ble_command(device_id, FountainAction.RESET_FILTER)
+await client.bluetooth_manager.send_ble_command(device_id, BleWaterFountainAction.RESET_FILTER)
 ```
 
 ---
 
-### `FountainAction.PAUSE` _(need a BLE relay)_
+#### `BleWaterFountainAction.PAUSE` _(need a BLE relay)_
 
 Sends a BLE command to pause the water fountain pump while it is currently running.
 
 ```python
-await client.bluetooth_manager.send_ble_command(device_id, FountainAction.PAUSE)
+await client.bluetooth_manager.send_ble_command(device_id, BleWaterFountainAction.PAUSE)
 ```
 
 ---
 
-### `FountainAction.CONTINUE` _(need a BLE relay)_
+#### `BleWaterFountainAction.CONTINUE` _(need a BLE relay)_
 
 Sends a BLE command to resume the water fountain pump after it has been paused.
 
 ```python
-await client.bluetooth_manager.send_ble_command(device_id, FountainAction.CONTINUE)
+await client.bluetooth_manager.send_ble_command(device_id, BleWaterFountainAction.CONTINUE)
 ```
+
+---
+
+### Cloud Water Fountain commands
+
+Cloud water fountains (W7H) use HTTP `updateSettings` and `controlDevice`. Entity type: `CloudWaterFountain`.
+
+```python
+from pypetkitapi import CloudWaterFountain, CloudWaterFountainCommand, FountainCommand
+from pypetkitapi.command import DeviceAction, DeviceCommand
+
+# Update a setting
+await client.send_api_request(device_id, DeviceCommand.UPDATE_SETTING, {"fountainMode": 1})
+
+# Start a maintenance action (drain flush, refill, drain, deep clean)
+await client.send_api_request(
+    device_id,
+    DeviceCommand.CONTROL_DEVICE,
+    {DeviceAction.START: CloudWaterFountainCommand.REFILL},
+)
+
+# Reset filter counter
+await client.send_api_request(device_id, FountainCommand.FILTER_RESET)
+```
+
+| `CloudWaterFountainCommand` | `start_action` | Action      |
+| --------------------------- | -------------- | ----------- |
+| `DRAIN_FLUSH`               | `1`            | Drain flush |
+| `REFILL`                    | `2`            | Refill      |
+| `DRAIN`                     | `3`            | Drain       |
+| `DEEP_CLEAN`                | `4`            | Deep clean  |
+
+---
+
+### Import paths
+
+| Compatibility name         | Canonical name                 | Module                                     |
+| -------------------------- | ------------------------------ | ------------------------------------------ |
+| `WaterFountain`            | `BleWaterFountain`             | `pypetkitapi.ble_water_fountain_container` |
+| `WaterFountainRecord`      | `BleWaterFountainRecord`       | `pypetkitapi.ble_water_fountain_container` |
+| `SettingsFountain`         | `SettingsBleWaterFountain`     | `pypetkitapi.ble_water_fountain_container` |
+| `FountainAction`           | `BleWaterFountainAction`       | `pypetkitapi.command`                      |
+| `FOUNTAIN_COMMAND`         | `BLE_WATER_FOUNTAIN_COMMAND`   | `pypetkitapi.command`                      |
+| `water_fountain_container` | `ble_water_fountain_container` | shim re-export                             |
 
 ---
 

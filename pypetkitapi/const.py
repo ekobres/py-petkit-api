@@ -40,6 +40,7 @@ T6 = "t6"
 T7 = "t7"
 W4 = "w4"
 W5 = "w5"
+W7H = "w7h"
 CTW2 = "ctw2"
 CTW3 = "ctw3"
 K2 = "k2"
@@ -55,8 +56,14 @@ FEEDER_WITH_CAMERA = [D4H, D4SH]
 # Devices that support temporary camera open (5-minute live streaming)
 TEMP_CAMERA_TYPES = [D4H, D4SH, T5, T6]
 DEVICES_FEEDER = [FEEDER, FEEDER_MINI, D3, D4, D4S, D4H, D4SH]
-# Water Fountain
-DEVICES_WATER_FOUNTAIN = [W4, W5, CTW2, CTW3]
+# BLE water fountains
+DEVICES_BLE_WATER_FOUNTAIN = [W4, W5, CTW2, CTW3]
+# Cloud water fountains
+DEVICES_CLOUD_WATER_FOUNTAIN = [W7H]
+DEVICES_WATER_FOUNTAIN = [
+    *DEVICES_BLE_WATER_FOUNTAIN,
+    *DEVICES_CLOUD_WATER_FOUNTAIN,
+]
 # Purifier
 DEVICES_PURIFIER = [K2, K3]
 # All devices
@@ -211,6 +218,7 @@ class PetkitEndpoint(StrEnum):
 
     # Fountain & Litter Box
     CONTROL_DEVICE = "controlDevice"
+    FILTER_RESET = "filterReset"
     GET_WORK_RECORD = "getWorkRecord"
 
     # Litter Box

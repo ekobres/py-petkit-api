@@ -20,7 +20,15 @@ from tenacity import (
 )
 
 from pypetkitapi import utils
+from pypetkitapi.ble_water_fountain_container import (
+    BleWaterFountain,
+    BleWaterFountainRecord,
+)
 from pypetkitapi.bluetooth import BluetoothManager
+from pypetkitapi.cloud_water_fountain_container import (
+    CloudWaterFountain,
+    CloudWaterFountainRecord,
+)
 from pypetkitapi.command import ACTIONS_MAP
 from pypetkitapi.const import (
     CLIENT_NFO,
@@ -29,10 +37,11 @@ from pypetkitapi.const import (
     DEVICE_DATA,
     DEVICE_RECORDS,
     DEVICE_STATS,
+    DEVICES_BLE_WATER_FOUNTAIN,
+    DEVICES_CLOUD_WATER_FOUNTAIN,
     DEVICES_FEEDER,
     DEVICES_LITTER_BOX,
     DEVICES_PURIFIER,
-    DEVICES_WATER_FOUNTAIN,
     ERR_KEY,
     FEEDER_WITH_CAMERA,
     LITTER_NO_CAMERA,
@@ -89,7 +98,6 @@ from pypetkitapi.litter_container import (
 )
 from pypetkitapi.purifier_container import Purifier
 from pypetkitapi.utils import get_timezone_offset
-from pypetkitapi.water_fountain_container import WaterFountain, WaterFountainRecord
 
 data_handlers: dict[str, Any] = {}
 
@@ -172,7 +180,8 @@ class PetKitClient:
         self._session: SessionInfo | None = None
         self.account_data: list[AccountData] = []
         self.petkit_entities: dict[
-            int, Feeder | Litter | WaterFountain | Purifier | Pet
+            int,
+            Feeder | Litter | BleWaterFountain | CloudWaterFountain | Purifier | Pet,
         ] = {}
         self.available_device_models: list[DeviceModelInfo] = []
         self.req = PrepReq(
@@ -364,6 +373,15 @@ class PetKitClient:
         )
         return NewIotInfo.model_validate(response)
 
+    def _iot_config_from_response(self, response: dict) -> IotInfo | None:
+        """Parse an IoT/MQTT configuration payload from a device info response."""
+        if "ali" in response or "petkit" in response:
+            nested = NewIotInfo.model_validate(response)
+            return nested.petkit or nested.ali
+        if "deviceName" in response or "mqttHost" in response:
+            return IotInfo.model_validate(response)
+        return None
+
     async def get_iot_mqtt_config(self) -> IotInfo:
         """Return the preferred IoT/MQTT configuration.
 
@@ -395,18 +413,9 @@ class PetKitClient:
             _LOGGER.debug(
                 "IoT %s raw response keys: %s", endpoint_name, list(response.keys())
             )
-
-            # Nested shape: {ali: {...}, petkit: {...}}
-            if "ali" in response or "petkit" in response:
-                nested = NewIotInfo.model_validate(response)
-                if nested.petkit is not None:
-                    return nested.petkit
-                if nested.ali is not None:
-                    return nested.ali
-
-            # Flat shape: {deviceName: ..., mqttHost: ..., ...}
-            if "deviceName" in response or "mqttHost" in response:
-                return IotInfo.model_validate(response)
+            iot_config = self._iot_config_from_response(response)
+            if iot_config is not None:
+                return iot_config
 
         raise PypetkitError("No IoT MQTT configuration available from any endpoint")
 
@@ -587,42 +596,53 @@ class PetKitClient:
                     )
 
         await self.get_device_info()
-
-        for account in self.account_data:
-            if account.device_list:
-                for device in account.device_list:
-                    for model_info in self.available_device_models:
-                        if (
-                            model_info.device_type_id == device.type
-                            and model_info.type_code == device.type_code
-                        ):
-                            _LOGGER.debug(
-                                "Found a match for type_id=%s type_code=%s => %s",
-                                model_info.device_type_id,
-                                model_info.type_code,
-                                model_info.label_name.title(),
-                            )
-                            device.modele_name = model_info.label_name.title()
-                            break
-
-        # Add pets to device_list
-        for account in self.account_data:
-            if account.pet_list:
-                for pet in account.pet_list:
-                    self.petkit_entities[pet.pet_id] = pet
-                    pet.device_nfo = Device(
-                        deviceType=PET,
-                        deviceId=pet.pet_id,
-                        createdAt=pet.created_at,
-                        deviceName=pet.pet_name,
-                        groupId=0,
-                        type=0,
-                        typeCode=0,
-                        uniqueId=str(pet.sn),
-                    )
+        self._assign_device_model_names()
+        self._register_pets_from_accounts()
 
         # Fetch pet details and update pet information
         pet_details_list = await self._get_pet_details()
+        self._attach_pet_details(pet_details_list)
+
+    def _assign_device_model_names(self) -> None:
+        """Match account devices to available model metadata."""
+        for account in self.account_data:
+            if not account.device_list:
+                continue
+            for device in account.device_list:
+                for model_info in self.available_device_models:
+                    if (
+                        model_info.device_type_id == device.type
+                        and model_info.type_code == device.type_code
+                    ):
+                        _LOGGER.debug(
+                            "Found a match for type_id=%s type_code=%s => %s",
+                            model_info.device_type_id,
+                            model_info.type_code,
+                            model_info.label_name.title(),
+                        )
+                        device.modele_name = model_info.label_name.title()
+                        break
+
+    def _register_pets_from_accounts(self) -> None:
+        """Add pets from account data to the entity map."""
+        for account in self.account_data:
+            if not account.pet_list:
+                continue
+            for pet in account.pet_list:
+                self.petkit_entities[pet.pet_id] = pet
+                pet.device_nfo = Device(
+                    deviceType=PET,
+                    deviceId=pet.pet_id,
+                    createdAt=pet.created_at,
+                    deviceName=pet.pet_name,
+                    groupId=0,
+                    type=0,
+                    typeCode=0,
+                    uniqueId=str(pet.sn),
+                )
+
+    def _attach_pet_details(self, pet_details_list: list) -> None:
+        """Attach fetched pet detail payloads to registered pet entities."""
         for pet_details in pet_details_list:
             pet_id = pet_details.id
             if pet_id in self.petkit_entities:
@@ -704,10 +724,19 @@ class PetKitClient:
                     record_tasks, media_tasks, device_type, device
                 )
 
-            elif device_type in DEVICES_WATER_FOUNTAIN:
-                main_tasks.append(self._fetch_device_data(device, WaterFountain))
+            elif device_type in DEVICES_CLOUD_WATER_FOUNTAIN:
+                main_tasks.append(self._fetch_device_data(device, CloudWaterFountain))
                 record_tasks.append(
-                    self._fetch_device_data(device, WaterFountainRecord)
+                    self._fetch_device_data(device, CloudWaterFountainRecord)
+                )
+                self._add_cloud_water_fountain_task_by_type(
+                    media_tasks, device_type, device
+                )
+
+            elif device_type in DEVICES_BLE_WATER_FOUNTAIN:
+                main_tasks.append(self._fetch_device_data(device, BleWaterFountain))
+                record_tasks.append(
+                    self._fetch_device_data(device, BleWaterFountainRecord)
                 )
 
             elif device_type in DEVICES_PURIFIER:
@@ -748,6 +777,20 @@ class PetKitClient:
         if device_type in FEEDER_WITH_CAMERA:
             media_tasks.append(self._fetch_media(device))
 
+    def _add_cloud_water_fountain_task_by_type(
+        self,
+        media_tasks: list,
+        device_type: str,
+        device: Device,
+    ) -> None:
+        """Add specific tasks for cloud water fountain devices.
+        :param media_tasks: List of media tasks.
+        :param device_type: Device type.
+        :param device: Device data.
+        """
+        if device_type in DEVICES_CLOUD_WATER_FOUNTAIN:
+            media_tasks.append(self._fetch_media(device))
+
     async def _execute_stats_tasks(self) -> None:
         """Execute tasks to populate pet stats."""
         stats_tasks = [
@@ -774,11 +817,13 @@ class PetKitClient:
         data_class: type[
             Feeder
             | Litter
-            | WaterFountain
+            | BleWaterFountain
+            | CloudWaterFountain
             | Purifier
             | FeederRecord
             | LitterRecord
-            | WaterFountainRecord
+            | BleWaterFountainRecord
+            | CloudWaterFountainRecord
             | PetOutGraph
             | LitterStats
             | PackageInfoResult
@@ -817,7 +862,7 @@ class PetKitClient:
         if (
             isinstance(response, dict)
             and response.get("list", None)
-            and data_class is LitterRecord
+            and data_class in (LitterRecord, CloudWaterFountainRecord)
         ):
             response = response.get("list", [])
 
@@ -846,7 +891,7 @@ class PetKitClient:
     async def _handle_device_data(
         self,
         device: Device,
-        device_data: Feeder | Litter | WaterFountain | Purifier,
+        device_data: Feeder | Litter | BleWaterFountain | CloudWaterFountain | Purifier,
         device_type: str,
     ):
         """Handle device data."""
@@ -860,7 +905,9 @@ class PetKitClient:
     ):
         """Handle device records."""
         entity = self.petkit_entities.get(device.device_id)
-        if entity and isinstance(entity, (Feeder, Litter, WaterFountain)):
+        if entity and isinstance(
+            entity, (Feeder, Litter, BleWaterFountain, CloudWaterFountain)
+        ):
             entity.device_records = device_data
             _LOGGER.debug("Device records fetched OK for %s", device_type)
         else:
@@ -1064,87 +1111,65 @@ class PetKitClient:
         if not isinstance(device_pet_graph, list):
             device_pet_graph = []
 
-        # Get last_litter_usage, last_measured_weight, last_duration_usage from PetOutGraph
-        for value in device_pet_graph:
-            if value.pet_id == pet.pet_id and (
-                pet.last_litter_usage is None
-                or getattr(value, "time", 0) > pet.last_litter_usage
-            ):
-                self.set_if_not_none(
-                    pet, "last_litter_usage", getattr(value.content, "time", None)
-                )
-                self.set_if_not_none(
-                    pet,
-                    "last_measured_weight",
-                    getattr(value.content, "pet_weight", None),
-                )
-                self.set_if_not_none(
-                    pet, "last_duration_usage", getattr(value, "toilet_time", None)
-                )
-                device_name = getattr(litter_data.device_nfo, "device_name", None)
-                self.set_if_not_none(
-                    pet,
-                    "last_device_used",
-                    device_name.capitalize() if device_name else None,
-                )
-                self.set_if_not_none(pet, "last_event_id", value.event_id or None)
-
-        # Get yowling_detected, anormal_ph_detected, measured_ph, soft_stool_detected, last_urination and last_defecation from LitterRecord
+        self._update_pet_from_litter_graph(pet, litter_data, device_pet_graph)
 
         for value in device_records:
             if value.pet_id == pet.pet_id and value.event_id == pet.last_event_id:
-                # yowling_detected
-                pet.yowling_detected = value.content.pet_voice if value.content else 0
+                self._update_pet_from_litter_record(pet, value)
 
-                # anormal_ph_detected : bool
-                if (
-                    value.sub_content
-                    and value.sub_content[0]
-                    and value.sub_content[0].content
-                ):
-                    pet.abnormal_ph_detected = value.sub_content[0].content.ph_state
+    def _update_pet_from_litter_graph(
+        self, pet: Pet, litter_data: Litter, device_pet_graph: list
+    ) -> None:
+        """Update pet usage stats from litter camera graph data."""
+        for value in device_pet_graph:
+            if value.pet_id != pet.pet_id:
+                continue
+            if pet.last_litter_usage is not None and getattr(value, "time", 0) <= (
+                pet.last_litter_usage
+            ):
+                continue
+            self.set_if_not_none(
+                pet, "last_litter_usage", getattr(value.content, "time", None)
+            )
+            self.set_if_not_none(
+                pet,
+                "last_measured_weight",
+                getattr(value.content, "pet_weight", None),
+            )
+            self.set_if_not_none(
+                pet, "last_duration_usage", getattr(value, "toilet_time", None)
+            )
+            device_name = getattr(litter_data.device_nfo, "device_name", None)
+            self.set_if_not_none(
+                pet,
+                "last_device_used",
+                device_name.capitalize() if device_name else None,
+            )
+            self.set_if_not_none(pet, "last_event_id", value.event_id or None)
 
-                # measured_ph : float | None
-                if (
-                    value.sub_content
-                    and value.sub_content[0]
-                    and value.sub_content[0].content
-                    and value.sub_content[0].content.detection_info
-                ):
-                    pet.measured_ph = statistics.mean(
-                        item["ph"]
-                        for item in value.sub_content[0].content.detection_info
-                    )
-                else:
-                    pet.measured_ph = None
+    def _update_pet_from_litter_record(self, pet: Pet, value: LitterRecord) -> None:
+        """Update pet health stats from a litter camera event record."""
+        pet.yowling_detected = value.content.pet_voice if value.content else 0
 
-                # soft_stool_detected : bool
-                if (
-                    value.sub_content
-                    and value.sub_content[0]
-                    and value.sub_content[0].content
-                ):
-                    pet.soft_stool_detected = value.sub_content[0].content.soft_stools
+        sub_content = value.sub_content[0] if value.sub_content else None
+        content = sub_content.content if sub_content else None
+        if content is None:
+            pet.measured_ph = None
+            return
 
-                # last_urination : str | None
-                if (
-                    value.sub_content
-                    and value.sub_content[0]
-                    and value.sub_content[0].content
-                    and getattr(value.sub_content[0].content, "urine_bolus", None) == 1
-                    and value.timestamp is not None
-                ):
-                    pet.last_urination = value.timestamp
+        pet.abnormal_ph_detected = content.ph_state
+        if content.detection_info:
+            pet.measured_ph = statistics.mean(
+                item["ph"] for item in content.detection_info
+            )
+        else:
+            pet.measured_ph = None
+        pet.soft_stool_detected = content.soft_stools
 
-                # last_defecation : str | None
-                if (
-                    value.sub_content
-                    and value.sub_content[0]
-                    and value.sub_content[0].content
-                    and getattr(value.sub_content[0].content, "hard_stools", None) == 1
-                    and value.timestamp is not None
-                ):
-                    pet.last_defecation = value.timestamp
+        if getattr(content, "urine_bolus", None) == 1 and value.timestamp is not None:
+            pet.last_urination = value.timestamp
+        if getattr(content, "hard_stools", None) == 1 and value.timestamp is not None:
+            pet.last_defecation = value.timestamp
 
     async def get_cloud_video(self, video_url: str) -> dict[str, str | int] | None:
         """Get the video m3u8 link from the cloud.

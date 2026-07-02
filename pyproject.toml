@@ -255,6 +255,9 @@ pytest = "^9.0.0"
 pytest-cov = "^7.0.0"
 pytest-asyncio = "^1.0.0"
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
 [tool.bumpver]
 current_version = "1.27.0"
 version_pattern = "MAJOR.MINOR.PATCH"

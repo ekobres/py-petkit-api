@@ -13,6 +13,7 @@ from pypetkitapi.const import (
     D4H,
     D4S,
     D4SH,
+    DEVICES_CLOUD_WATER_FOUNTAIN,
     DEVICES_FEEDER,
     DUAL_HOPPER_DEVICES,
     FEEDER,
@@ -42,9 +43,10 @@ class DeviceCommand(StrEnum):
 
 
 class FountainCommand(StrEnum):
-    """Device Command"""
+    """BLE water fountain HTTP command stub."""
 
     CONTROL_DEVICE = "control_device"
+    FILTER_RESET = "filter_reset"
 
 
 class FeederCommand(StrEnum):
@@ -119,8 +121,17 @@ class DeviceAction(StrEnum):
     POWER = "power_action"
 
 
-class FountainAction(StrEnum):
-    """Fountain Action"""
+class CloudWaterFountainCommand(IntEnum):
+    """Cloud water fountain controlDevice start_action values."""
+
+    DRAIN_FLUSH = 1
+    REFILL = 2
+    DRAIN = 3
+    DEEP_CLEAN = 4
+
+
+class BleWaterFountainAction(StrEnum):
+    """BLE relay command bytes for fountain pump control."""
 
     MODE_NORMAL = "Normal"
     MODE_SMART = "Smart"
@@ -140,17 +151,21 @@ class FountainAction(StrEnum):
     LIGHT_OFF = "Light Off"
 
 
-FOUNTAIN_COMMAND = {
-    FountainAction.PAUSE: [220, 1, 3, 0, 1, 0, 2],
-    FountainAction.CONTINUE: [220, 1, 3, 0, 1, 1, 2],
-    FountainAction.RESET_FILTER: [222, 1, 0, 0],
-    FountainAction.POWER_OFF: [220, 1, 3, 0, 0, 1, 1],
-    FountainAction.POWER_ON: [220, 1, 3, 0, 1, 1, 1],
-    FountainAction.MODE_NORMAL: [220, 1, 3, 0, 1, 1, 1],
-    FountainAction.MODE_SMART: [220, 1, 3, 0, 1, 2, 1],
-    FountainAction.MODE_STANDARD: [220, 1, 3, 0, 1, 1, 1],
-    FountainAction.MODE_INTERMITTENT: [220, 1, 3, 0, 1, 2, 1],
+FountainAction = BleWaterFountainAction
+
+BLE_WATER_FOUNTAIN_COMMAND = {
+    BleWaterFountainAction.PAUSE: [220, 1, 3, 0, 1, 0, 2],
+    BleWaterFountainAction.CONTINUE: [220, 1, 3, 0, 1, 1, 2],
+    BleWaterFountainAction.RESET_FILTER: [222, 1, 0, 0],
+    BleWaterFountainAction.POWER_OFF: [220, 1, 3, 0, 0, 1, 1],
+    BleWaterFountainAction.POWER_ON: [220, 1, 3, 0, 1, 1, 1],
+    BleWaterFountainAction.MODE_NORMAL: [220, 1, 3, 0, 1, 1, 1],
+    BleWaterFountainAction.MODE_SMART: [220, 1, 3, 0, 1, 2, 1],
+    BleWaterFountainAction.MODE_STANDARD: [220, 1, 3, 0, 1, 1, 1],
+    BleWaterFountainAction.MODE_INTERMITTENT: [220, 1, 3, 0, 1, 2, 1],
 }
+
+FOUNTAIN_COMMAND = BLE_WATER_FOUNTAIN_COMMAND
 
 
 @dataclass
@@ -276,9 +291,26 @@ ACTIONS_MAP = {
         params=lambda device, command: {
             "id": device.id,
             "kv": json.dumps(command),
-            "type": list(command.keys())[0].split("_")[0],
+            "type": next(iter(command.keys())).split("_")[0],
         },
-        supported_device=[K2, K3, T3, T4, T5, T6, T7, COZY],
+        supported_device=[
+            K2,
+            K3,
+            T3,
+            T4,
+            T5,
+            T6,
+            T7,
+            COZY,
+            *DEVICES_CLOUD_WATER_FOUNTAIN,
+        ],
+    ),
+    FountainCommand.FILTER_RESET: CmdData(
+        endpoint=PetkitEndpoint.FILTER_RESET,
+        params=lambda device: {
+            "deviceId": device.id,
+        },
+        supported_device=DEVICES_CLOUD_WATER_FOUNTAIN,
     ),
     DeviceCommand.OPEN_CAMERA: CmdData(
         endpoint=PetkitEndpoint.TEMP_OPEN_CAMERA,

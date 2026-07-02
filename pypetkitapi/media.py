@@ -7,6 +7,7 @@ import logging
 import os
 from pathlib import Path
 import re
+from collections.abc import Callable, Iterator
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
@@ -18,7 +19,12 @@ from Crypto.Cipher import AES
 from Crypto.Util.Padding import unpad
 
 from pypetkitapi import Feeder, Litter, PetKitClient, RecordsItems, RecordType
+from pypetkitapi.cloud_water_fountain_container import (
+    CloudWaterFountain,
+    CloudWaterFountainRecord,
+)
 from pypetkitapi.const import (
+    DEVICES_CLOUD_WATER_FOUNTAIN,
     FEEDER_WITH_CAMERA,
     LITTER_WITH_CAMERA,
     PTK_DBG,
@@ -29,6 +35,11 @@ from pypetkitapi.const import (
 from pypetkitapi.litter_container import LitterRecord
 
 _LOGGER = logging.getLogger(__name__)
+
+_LOG_NO_RECORDS = "No records found for %s"
+_LOG_RECORD_EMPTY = "Record is empty"
+_LOG_MISSING_TIMESTAMP = "Missing timestamp for record item"
+_LOG_MISSING_EVENT_AES = "Missing event_id or aes_key for record item"
 
 # Cache for compiled regex patterns keyed by device_id
 _MEDIA_FILENAME_PATTERNS: dict[int, re.Pattern] = {}
@@ -93,7 +104,7 @@ class MediaManager:
             self._media_index[index_key] = media_file
 
     async def gather_all_media_from_cloud(
-        self, devices: list[Feeder | Litter]
+        self, devices: list[Feeder | Litter | CloudWaterFountain]
     ) -> list[MediaCloud]:
         """Get all media files from all devices and return a list of MediaCloud.
         :param devices: List of devices
@@ -104,29 +115,52 @@ class MediaManager:
 
         for device in devices:
             if isinstance(device, Feeder):
-                if (
-                    device.device_nfo
-                    and device.device_nfo.device_type in FEEDER_WITH_CAMERA
-                ):
-                    media_files.extend(await self._process_feeder(device))
-                else:
-                    _LOGGER.debug(
-                        "Feeder %s does not support media file extraction",
-                        device.name,
+                media_files.extend(
+                    await self._gather_device_media(
+                        device,
+                        FEEDER_WITH_CAMERA,
+                        self._process_feeder,
+                        "Feeder",
                     )
+                )
             elif isinstance(device, Litter):
-                if (
-                    device.device_nfo
-                    and device.device_nfo.device_type in LITTER_WITH_CAMERA
-                ):
-                    media_files.extend(await self._process_litter(device))
-                else:
-                    _LOGGER.debug(
-                        "Litter %s does not support media file extraction",
-                        device.name,
+                media_files.extend(
+                    await self._gather_device_media(
+                        device,
+                        LITTER_WITH_CAMERA,
+                        self._process_litter,
+                        "Litter",
                     )
+                )
+            elif isinstance(device, CloudWaterFountain):
+                media_files.extend(
+                    await self._gather_device_media(
+                        device,
+                        DEVICES_CLOUD_WATER_FOUNTAIN,
+                        self._process_cloud_water_fountain,
+                        "Cloud water fountain",
+                    )
+                )
 
         return media_files
+
+    async def _gather_device_media(
+        self,
+        device: Feeder | Litter | CloudWaterFountain,
+        supported_types: list[str],
+        process_device: Callable[..., Any],
+        device_label: str,
+    ) -> list[MediaCloud]:
+        """Collect media for a device when its type supports cloud media."""
+        device_nfo = device.device_nfo
+        if device_nfo and device_nfo.device_type in supported_types:
+            return await process_device(device)
+        _LOGGER.debug(
+            "%s %s does not support media file extraction",
+            device_label,
+            device.name,
+        )
+        return []
 
     async def gather_all_media_from_disk(
         self, storage_path: Path, device_id: int
@@ -308,7 +342,7 @@ class MediaManager:
         records = feeder.device_records
 
         if not records:
-            _LOGGER.debug("No records found for %s", feeder.name)
+            _LOGGER.debug(_LOG_NO_RECORDS, feeder.name)
             return media_files
 
         for record_type in RecordTypeLST:
@@ -344,74 +378,100 @@ class MediaManager:
             return media_files
 
         for item in record.items:
-            if not isinstance(item, RecordsItems):
-                _LOGGER.debug("Record is empty")
+            media_file = await self._feeder_item_media(
+                item, record_type, feeder_id, device_type, user_id, cp_sub
+            )
+            if media_file is None:
                 continue
-            timestamp = await self._get_timestamp(item)
-            if timestamp is None:
-                _LOGGER.warning("Missing timestamp for record item")
-                continue
-            if not item.event_id or not item.aes_key:
-                # Skip feed event in the future
-                _LOGGER.debug(
-                    "Missing event_id or aes_key for record item (probably a feed event not yet completed, or uploaded)"
-                )
-                continue
-            if not user_id:
-                _LOGGER.warning("Missing user_id for record item")
-                continue
-
-            date_str = await self.get_date_from_ts(timestamp)
-            filepath = f"{feeder_id}/{date_str}"
-            media_files.append(
-                MediaCloud(
-                    event_id=item.event_id,
-                    event_type=record_type,
-                    device_id=feeder_id,
-                    user_id=user_id,
-                    image=item.preview,
-                    video=await self.construct_video_url(
-                        device_type, item, user_id, cp_sub
-                    ),
-                    filepath=f"{filepath}/{record_type.name.lower()}",
-                    aes_key=item.aes_key,
-                    timestamp=timestamp,
+            media_files.append(media_file)
+            media_files.extend(
+                self._feeder_eat_dish_images(
+                    item,
+                    record_type,
+                    feeder_id,
+                    user_id,
+                    media_file.timestamp,
+                    f"{feeder_id}/{await self.get_date_from_ts(media_file.timestamp)}",
                 )
             )
-
-            # Gather the dish before and after images for EAT records
-            if record_type == RecordType.EAT:
-                if hasattr(item, "preview1") and item.preview1:
-                    # Preview1 is dish before image
-                    media_files.append(
-                        MediaCloud(
-                            event_id=item.event_id,
-                            event_type=RecordType.DISH_BEFORE,
-                            device_id=feeder_id,
-                            user_id=user_id,
-                            image=item.preview1,
-                            video=None,
-                            filepath=f"{filepath}/{RecordType.DISH_BEFORE.name.lower()}",
-                            aes_key=item.aes_key,
-                            timestamp=timestamp,
-                        )
-                    )
-                if hasattr(item, "preview2") and item.preview2:
-                    # Preview2 is dish after image
-                    media_files.append(
-                        MediaCloud(
-                            event_id=item.event_id,
-                            event_type=RecordType.DISH_AFTER,
-                            device_id=feeder_id,
-                            user_id=user_id,
-                            image=item.preview2,
-                            video=None,
-                            filepath=f"{filepath}/{RecordType.DISH_AFTER.name.lower()}",
-                            aes_key=item.aes_key,
-                            timestamp=timestamp,
-                        )
-                    )
         return media_files
+
+    async def _feeder_item_media(
+        self,
+        item: RecordsItems,
+        record_type: RecordType,
+        feeder_id: int,
+        device_type: str | None,
+        user_id: int | None,
+        cp_sub: bool,
+    ) -> MediaCloud | None:
+        """Build a MediaCloud entry for a single feeder record item."""
+        if not isinstance(item, RecordsItems):
+            _LOGGER.debug(_LOG_RECORD_EMPTY)
+            return None
+        timestamp = await self._get_timestamp(item)
+        if timestamp is None:
+            _LOGGER.warning(_LOG_MISSING_TIMESTAMP)
+            return None
+        if not item.event_id or not item.aes_key:
+            _LOGGER.debug(
+                "Missing event_id or aes_key for record item "
+                "(probably a feed event not yet completed, or uploaded)"
+            )
+            return None
+        if not user_id:
+            _LOGGER.warning("Missing user_id for record item")
+            return None
+
+        date_str = await self.get_date_from_ts(timestamp)
+        filepath = f"{feeder_id}/{date_str}"
+        return MediaCloud(
+            event_id=item.event_id,
+            event_type=record_type,
+            device_id=feeder_id,
+            user_id=user_id,
+            image=item.preview,
+            video=await self.construct_video_url(device_type, item, user_id, cp_sub),
+            filepath=f"{filepath}/{record_type.name.lower()}",
+            aes_key=item.aes_key,
+            timestamp=timestamp,
+        )
+
+    @staticmethod
+    def _feeder_eat_dish_images(
+        item: RecordsItems,
+        record_type: RecordType,
+        feeder_id: int,
+        user_id: int,
+        timestamp: int,
+        filepath_prefix: str,
+    ) -> list[MediaCloud]:
+        """Add dish before/after images for EAT feeder events."""
+        if record_type != RecordType.EAT:
+            return []
+
+        dish_images: list[MediaCloud] = []
+        dish_types = (
+            (RecordType.DISH_BEFORE, "preview1"),
+            (RecordType.DISH_AFTER, "preview2"),
+        )
+        for dish_type, preview_attr in dish_types:
+            preview = getattr(item, preview_attr, None)
+            if preview:
+                dish_images.append(
+                    MediaCloud(
+                        event_id=item.event_id,
+                        event_type=dish_type,
+                        device_id=feeder_id,
+                        user_id=user_id,
+                        image=preview,
+                        video=None,
+                        filepath=f"{filepath_prefix}/{dish_type.name.lower()}",
+                        aes_key=item.aes_key,
+                        timestamp=timestamp,
+                    )
+                )
+        return dish_images
 
     async def _process_litter(self, litter: Litter) -> list[MediaCloud]:
         """Process media files for a Litter device.
@@ -419,7 +479,6 @@ class MediaManager:
         :return: List of MediaCloud objects for the device
         """
         media_files: list[MediaCloud] = []
-        records = litter.device_records
         litter_id = litter.device_nfo.device_id if litter.device_nfo else None
         device_type = litter.device_nfo.device_type if litter.device_nfo else None
         user_id = litter.user.id if litter.user else None
@@ -427,84 +486,186 @@ class MediaManager:
 
         if not litter_id or not device_type or not user_id:
             _LOGGER.warning(
-                "Missing one or more of mandatory information : litter_id/device_id/user_id for record"
+                "Missing one or more of mandatory information : "
+                "litter_id/device_id/user_id for record"
             )
             return media_files
 
-        if not records:
-            _LOGGER.debug("No records found for %s", litter.name)
-            return media_files
-
-        for record in records:
-            if not isinstance(record, LitterRecord):
-                _LOGGER.debug("Record is empty")
-                continue
-            if not record.event_id or not record.aes_key:
-                _LOGGER.debug("Missing event_id or aes_key for record item")
-                continue
-            if record.timestamp is None:
-                _LOGGER.debug("Missing timestamp for record item")
-                continue
-
-            timestamp = record.timestamp or None
-            date_str = await self.get_date_from_ts(timestamp)
-
-            if getattr(record, "enum_event_type", None) == "pet_detect":
-                event_type = RecordType.PET
-            else:
-                event_type = RecordType.TOILETING
-
+        for record in self._valid_camera_records(
+            litter.device_records, LitterRecord, litter.name
+        ):
+            date_str = await self.get_date_from_ts(record.timestamp)
+            event_type = self._litter_event_type(record)
             filepath = f"{litter_id}/{date_str}/{event_type.name.lower()}"
-            media_files.append(
-                MediaCloud(
-                    event_id=f"{litter_id}_{record.timestamp}",
-                    event_type=event_type,
-                    device_id=litter_id,
-                    user_id=user_id,
-                    image=record.preview,
-                    video=await self.construct_video_url(
-                        device_type, record, user_id, cp_sub
-                    ),
-                    filepath=filepath,
-                    aes_key=record.aes_key,
-                    timestamp=record.timestamp,
-                )
+            await self._append_camera_media(
+                media_files,
+                event_id=f"{litter_id}_{record.timestamp}",
+                event_type=event_type,
+                device_id=litter_id,
+                device_type=device_type,
+                user_id=user_id,
+                cp_sub=cp_sub,
+                record=record,
+                filepath=filepath,
             )
-
-            # Gather Waste images if available
-            if hasattr(record, "sub_content") and record.sub_content:
-                for sub_record in record.sub_content:
-                    # The waste check image is at index 2 in the shit_pictures array
-                    waste_image_idx = 2
-                    if (
-                        hasattr(sub_record, "shit_pictures")
-                        and isinstance(sub_record.shit_pictures, list)
-                        and len(sub_record.shit_pictures) > waste_image_idx
-                    ):
-                        waste_image_data = sub_record.shit_pictures[waste_image_idx]
-                        if (
-                            waste_image_data.shit_picture
-                            and waste_image_data.shit_aes_key
-                        ):
-                            waste_filepath = f"{litter_id}/{date_str}/{RecordType.WASTE_CHECK.name.lower()}"
-                            media_files.append(
-                                MediaCloud(
-                                    event_id=f"{litter_id}_{record.timestamp}",
-                                    event_type=RecordType.WASTE_CHECK,
-                                    device_id=litter_id,
-                                    user_id=user_id,
-                                    image=waste_image_data.shit_picture,
-                                    video=None,
-                                    filepath=waste_filepath,
-                                    aes_key=waste_image_data.shit_aes_key,
-                                    timestamp=record.timestamp,
-                                )
-                            )
+            media_files.extend(
+                self._litter_waste_images(record, litter_id, user_id, date_str)
+            )
 
         return media_files
 
+    async def _process_cloud_water_fountain(
+        self, fountain: CloudWaterFountain
+    ) -> list[MediaCloud]:
+        """Process media files for a cloud water fountain device.
+        :param fountain: CloudWaterFountain device object
+        :return: List of MediaCloud objects for the device
+        """
+        media_files: list[MediaCloud] = []
+        fountain_id = fountain.device_nfo.device_id if fountain.device_nfo else None
+        device_type = fountain.device_nfo.device_type if fountain.device_nfo else None
+        user_id = fountain.user.id if fountain.user else None
+        cp_sub = self.is_subscription_active(fountain)
+
+        if not fountain_id or not device_type or not user_id:
+            _LOGGER.warning(
+                "Missing one or more of mandatory information : "
+                "fountain_id/device_type/user_id for record"
+            )
+            return media_files
+
+        for record in self._valid_camera_records(
+            fountain.device_records, CloudWaterFountainRecord, fountain.name
+        ):
+            event_type = self._cloud_water_fountain_event_type(record.enum_event_type)
+            date_str = await self.get_date_from_ts(record.timestamp)
+            filepath = f"{fountain_id}/{date_str}/{event_type.name.lower()}"
+            await self._append_camera_media(
+                media_files,
+                event_id=record.event_id,
+                event_type=event_type,
+                device_id=fountain_id,
+                device_type=device_type,
+                user_id=user_id,
+                cp_sub=cp_sub,
+                record=record,
+                filepath=filepath,
+            )
+
+        return media_files
+
+    def _valid_camera_records(
+        self,
+        records: list | None,
+        record_class: type,
+        device_name: str,
+    ) -> Iterator[LitterRecord | CloudWaterFountainRecord]:
+        """Yield camera device records that contain the fields needed for media."""
+        if not records:
+            _LOGGER.debug(_LOG_NO_RECORDS, device_name)
+            return
+        for record in records:
+            if not isinstance(record, record_class):
+                _LOGGER.debug(_LOG_RECORD_EMPTY)
+                continue
+            if not record.event_id or not record.aes_key:
+                _LOGGER.debug(_LOG_MISSING_EVENT_AES)
+                continue
+            if record.timestamp is None:
+                _LOGGER.debug(_LOG_MISSING_TIMESTAMP)
+                continue
+            yield record
+
+    async def _append_camera_media(
+        self,
+        media_files: list[MediaCloud],
+        *,
+        event_id: str,
+        event_type: RecordType,
+        device_id: int,
+        device_type: str,
+        user_id: int,
+        cp_sub: bool,
+        record: LitterRecord | CloudWaterFountainRecord,
+        filepath: str,
+    ) -> None:
+        """Append a primary camera media entry for a litter or fountain record."""
+        media_files.append(
+            MediaCloud(
+                event_id=event_id,
+                event_type=event_type,
+                device_id=device_id,
+                user_id=user_id,
+                image=record.preview,
+                video=await self.construct_video_url(
+                    device_type, record, user_id, cp_sub
+                ),
+                filepath=filepath,
+                aes_key=record.aes_key,
+                timestamp=record.timestamp,
+            )
+        )
+
     @staticmethod
-    def is_subscription_active(device: Feeder | Litter) -> bool:
+    def _litter_event_type(record: LitterRecord) -> RecordType:
+        """Map a litter record enum to a media record type."""
+        if getattr(record, "enum_event_type", None) == "pet_detect":
+            return RecordType.PET
+        return RecordType.TOILETING
+
+    @staticmethod
+    def _litter_waste_images(
+        record: LitterRecord,
+        litter_id: int,
+        user_id: int,
+        date_str: str,
+    ) -> list[MediaCloud]:
+        """Collect waste-check images attached to a litter record."""
+        if not getattr(record, "sub_content", None):
+            return []
+
+        waste_images: list[MediaCloud] = []
+        waste_image_idx = 2
+        for sub_record in record.sub_content:
+            shit_pictures = getattr(sub_record, "shit_pictures", None)
+            if not isinstance(shit_pictures, list):
+                continue
+            if len(shit_pictures) <= waste_image_idx:
+                continue
+            waste_image_data = shit_pictures[waste_image_idx]
+            if not waste_image_data.shit_picture or not waste_image_data.shit_aes_key:
+                continue
+            waste_images.append(
+                MediaCloud(
+                    event_id=f"{litter_id}_{record.timestamp}",
+                    event_type=RecordType.WASTE_CHECK,
+                    device_id=litter_id,
+                    user_id=user_id,
+                    image=waste_image_data.shit_picture,
+                    video=None,
+                    filepath=(
+                        f"{litter_id}/{date_str}/"
+                        f"{RecordType.WASTE_CHECK.name.lower()}"
+                    ),
+                    aes_key=waste_image_data.shit_aes_key,
+                    timestamp=record.timestamp,
+                )
+            )
+        return waste_images
+
+    @staticmethod
+    def _cloud_water_fountain_event_type(
+        enum_event_type: str | None,
+    ) -> RecordType:
+        """Map a cloud water fountain record enum to a media record type."""
+        if not enum_event_type:
+            return RecordType.PET
+        if enum_event_type.startswith("drink") or enum_event_type == "pet_detect":
+            return RecordType.PET
+        return RecordType.MOVE
+
+    @staticmethod
+    def is_subscription_active(device: Feeder | Litter | CloudWaterFountain) -> bool:
         """Check if the subscription is active based on the work_indate timestamp.
         :param device: Device object
         :return: True if the subscription is active, False otherwise
@@ -529,24 +690,31 @@ class MediaManager:
     async def construct_video_url(
         self,
         device_type: str | None,
-        event_data: LitterRecord | RecordsItems,
+        event_data: LitterRecord | RecordsItems | CloudWaterFountainRecord,
         user_id: int,
         cp_sub: bool | None,
     ) -> str | None:
         """Construct the video URL.
         :param device_type: Device type
-        :param event_data: LitterRecord | RecordsItems
+        :param event_data: LitterRecord | RecordsItems | CloudWaterFountainRecord
         :param user_id: User ID
         :param cp_sub: Cpsub value
         :return: Constructed video URL
         """
         if (
             not hasattr(event_data, "media_api")
+            or not event_data.media_api
             or not user_id
             or not (self._debug_test or cp_sub)
         ):
             return None
-        params = parse_qs(str(urlparse(event_data.media_api).query))
+        media_api = str(event_data.media_api)
+        if PetkitEndpoint.GET_M3U8 in media_api:
+            if "userId=" in media_api:
+                return media_api
+            separator = "&" if "?" in media_api else "?"
+            return f"{media_api}{separator}userId={user_id}"
+        params = parse_qs(str(urlparse(media_api).query))
         param_dict = {k: v[0] for k, v in params.items()}
         url = f"/{device_type}/{PetkitEndpoint.CLOUD_VIDEO}?startTime={param_dict.get('startTime')}&deviceId={param_dict.get('deviceId')}&userId={user_id}&mark={param_dict.get('mark')}"
         if hasattr(event_data, "eat_end_time"):
@@ -728,8 +896,8 @@ class DownloadDecryptMedia:
             async with aio_open(file_path, "wb") as file:
                 await file.write(content)
             _LOGGER.debug("Save file OK : %s", file_path)
-        except OSError as e:
-            _LOGGER.error("Failed to save file %s: %s", file_path, e)
+        except OSError:
+            _LOGGER.exception("Failed to save file %s", file_path)
         return file_path
 
     @staticmethod
@@ -742,7 +910,7 @@ class DownloadDecryptMedia:
         aes_key = aes_key.removesuffix("\n")
         key_bytes: bytes = aes_key.encode("utf-8")
         iv: bytes = b"\x61" * 16
-        cipher: Any = AES.new(key_bytes, AES.MODE_CBC, iv)
+        cipher: Any = AES.new(key_bytes, AES.MODE_CBC, iv)  # NOSONAR - PetKit media format
         decrypted_data: bytes = cipher.decrypt(encrypted_data)
 
         try:
@@ -797,10 +965,10 @@ class DownloadDecryptMedia:
                     stdout.decode().strip(),
                     stderr.decode().strip(),
                 )
-        except FileNotFoundError as e:
-            _LOGGER.error("Error during concatenation: %s", e)
-        except OSError as e:
-            _LOGGER.error("OS error during concatenation: %s", e)
+        except FileNotFoundError:
+            _LOGGER.exception("Error during concatenation")
+        except OSError:
+            _LOGGER.exception("OS error during concatenation")
 
     @staticmethod
     async def _delete_segments(ts_files: list[Path]) -> None:

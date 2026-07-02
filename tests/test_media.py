@@ -1,9 +1,16 @@
 import asyncio
+import os
+import time
 import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 from pypetkitapi import Litter, LitterRecord, PetKitClient
+from pypetkitapi.cloud_water_fountain_container import (
+    CloudWaterFountain,
+    CloudWaterFountainRecord,
+)
+from pypetkitapi.const import W7H
 from pypetkitapi.media import (
     MediaManager,
     RecordType,
@@ -174,6 +181,66 @@ class TestMediaManager(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(media_files[0].aes_key, AES_KEY)
         self.assertEqual(media_files[0].timestamp, TS_WORK_INDATE)
 
+    @patch("pypetkitapi.media.MediaManager.get_date_from_ts", new_callable=AsyncMock)
+    @patch("pypetkitapi.media.MediaManager.construct_video_url", new_callable=AsyncMock)
+    async def test_process_cloud_water_fountain(
+        self, mock_construct_video_url, mock_get_date_from_ts
+    ):
+        """Test _process_cloud_water_fountain method"""
+        fountain = MagicMock(spec=CloudWaterFountain)
+        fountain.device_nfo = MagicMock()
+        fountain.device_nfo.device_id = DEVICE_ID
+        fountain.device_nfo.device_type = W7H
+        fountain.user = MagicMock()
+        fountain.user.id = USER_ID
+        fountain.name = DEVICE_NAME
+        fountain.cloud_product = MagicMock(spec=CloudProduct)
+        fountain.cloud_product.work_indate = int(time.time()) + 3600
+
+        record_item = MagicMock(spec=CloudWaterFountainRecord)
+        record_item.event_id = EVENT_ID_EAT
+        record_item.aes_key = AES_KEY
+        record_item.preview = IMG_URL
+        record_item.timestamp = TS_WORK_INDATE
+        record_item.media_api = (
+            f"/w7h/getM3u8?deviceId={DEVICE_ID}&moduleType=EVENT_VIDEO&eventId={EVENT_ID_EAT}"
+        )
+        record_item.enum_event_type = "drink_over"
+
+        fountain.device_records = [record_item]
+
+        mock_get_date_from_ts.return_value = DATE_YYYYMMDD
+        mock_construct_video_url.return_value = VIDEO_URL
+
+        media_files = await self.media_manager._process_cloud_water_fountain(fountain)
+
+        self.assertEqual(len(media_files), 1)
+        self.assertEqual(media_files[0].event_id, EVENT_ID_EAT)
+        self.assertEqual(media_files[0].event_type, RecordType.PET)
+        self.assertEqual(media_files[0].video, VIDEO_URL)
+
+    @patch("pypetkitapi.media.MediaManager.get_date_from_ts", new_callable=AsyncMock)
+    async def test_gather_all_media_from_cloud_water_fountain(
+        self, mock_get_date_from_ts
+    ):
+        """Test gather_all_media_from_cloud routes cloud water fountains"""
+        fountain = MagicMock(spec=CloudWaterFountain)
+        fountain.device_nfo = MagicMock()
+        fountain.device_nfo.device_type = W7H
+        fountain.device_records = None
+        fountain.name = DEVICE_NAME
+
+        mock_get_date_from_ts.return_value = DATE_YYYYMMDD
+        with patch.object(
+            self.media_manager,
+            "_process_cloud_water_fountain",
+            new_callable=AsyncMock,
+            return_value=[],
+        ) as mock_process:
+            result = await self.media_manager.gather_all_media_from_cloud([fountain])
+            mock_process.assert_awaited_once_with(fountain)
+            self.assertEqual(result, [])
+
     async def test_get_timestamp(self):
         """Test _get_timestamp method"""
         media_manager = MediaManager()
@@ -236,8 +303,28 @@ class TestMediaManager(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIsNone(result)
 
+    async def test_construct_video_url_get_m3u8(self):
+        """Test construct_video_url for W7H getM3u8 media_api paths"""
+        media_manager = MediaManager()
+        media_manager._debug_test = False
+        event_data = MagicMock(spec=CloudWaterFountainRecord)
+        event_data.media_api = (
+            f"/w7h/getM3u8?deviceId={DEVICE_ID}&moduleType=EVENT_VIDEO&eventId={EVENT_ID_EAT}"
+        )
+
+        result = await media_manager.construct_video_url(
+            W7H, event_data, USER_ID, True
+        )
+        self.assertEqual(
+            result,
+            f"{event_data.media_api}&userId={USER_ID}",
+        )
+
+    @patch.dict(os.environ, {"TZ": "UTC"})
     async def test_get_date_from_ts(self):
         """Test get_date_from_ts method"""
+        if hasattr(time, "tzset"):
+            time.tzset()
         # Test with a valid timestamp
         timestamp = TS_WORK_INDATE
         expected_date = DATE_YYYYMMDD

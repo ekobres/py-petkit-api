@@ -39,7 +39,7 @@ For the Python client library that implements this API, see the [main README](RE
 - **Water Fountains**
   - [EverSweet 3 Pro / Solo 2 (W5)](#eversweet-3-pro--solo-2-w5---w5)
   - [EverSweet Max Cordless (CTW3)](#eversweet-max-cordless-ctw3---ctw3)
-  - [EverSweet Max 2 UVC (W7H)](#eversweet-max-2-uvc-w7h---w7h)
+  - [EverSweet Ultra AI (W7H)](#eversweet-ultra-ai-w7h---w7h)
 - **Air Purifiers**
   - [Air Purifier K2](#air-purifier-k2---k2)
   - [Air Purifier K3](#air-purifier-k3---k3)
@@ -100,12 +100,13 @@ The base URL can be overridden per-device via regional gateways (fetched from `v
 | 20 | `d4s/` | Feeder D4s |
 | 21 | `t5/` | Purobot Ultra (T5) |
 | 22 | `hg/` | Humidifier HG |
+| 23 | `ctw2/` | Eversweet Max 2 UVC (CTW2) |
 | 24 | `ctw3/` | EverSweet Max Cordless (CTW3) |
 | 25 | `d4sh/` | YumShare Dual-hopper with Camera (D4SH) |
 | 26 | `d4h/` | YumShare Solo with Camera (D4H) |
 | 27 | `t6/` | Purobot Max Pro 2 / PuraMax 2 (T6) |
 | 28 | `t7/` | Purobot Crystal Duo (T7) |
-| 29 | `w7h/` | EverSweet Max 2 UVC (W7H) |
+| 29 | `w7h/` | EverSweet Ultra AI (W7H) |
 | 30 | `w7/` | W7 (newer variant) |
 
 ---
@@ -662,7 +663,11 @@ Supports: [Device Lifecycle](#device-lifecycle) | [OTA](#ota-firmware-updates) |
 
 ## Water Fountains
 
-### EverSweet 3 Pro / Solo 2 (W5) - `w5/`
+### BLE Water Fountains
+
+BLE-connected fountains (W4, W5, CTW2, CTW3) use `deviceData` for state and BLE relay commands for pump control. They do not use `device_detail` or HTTP `controlDevice`.
+
+#### EverSweet 3 Pro / Solo 2 (W5) - `w5/`
 
 Supports: [Device Lifecycle](#device-lifecycle) (uses `signup`, `update`, `deviceData` variants)
 
@@ -707,15 +712,153 @@ Supports: [Device Lifecycle](#device-lifecycle) (uses `signup`, `update`, `devic
 | POST | `ctw3/upgradeCheck` | Check firmware upgrade |
 | POST | `ctw3/upgradeReport` | Report firmware upgrade |
 
-### EverSweet Max 2 UVC (W7H) - `w7h/`
+### Cloud Water Fountains
+
+Cloud-connected fountains (W7H) use `device_detail` for state, HTTP `updateSettings` for configuration, and HTTP `controlDevice` with `start_action` for maintenance actions.
+
+#### EverSweet Ultra AI (W7H) - `w7h/`
 
 Supports: [Device Lifecycle](#device-lifecycle) | [OTA](#ota-firmware-updates) | [Sharing](#sharing--invitations) | [Camera & Cloud Video](#camera--cloud-video-camera-equipped-devices-only)
+
+Fetches device state from `w7h/device_detail` (not `deviceData`).
+
+Example: `POST w7h/updateSettings` with `id={deviceId}&kv={"camera":1}`
+
+**`updateSettings` schedule encoding:**
+
+| Pattern | Format | Example |
+|---------|--------|---------|
+| `*Time` | Seconds from midnight (local device time) | `flushTime: 43200` → 12:00; `waterChangeTime: 72000` → 20:00 |
+| `*Cycle` | Interval in days | `flushCycle: 7` → every 7 days; `waterChangeCycle: 1` → daily |
+| `*MultiRange` | `[[startMinute, endMinute], ...]` — minutes from midnight (0–1439); ranges may cross midnight | `[[1320, 360]]` → 22:00–06:00; `[[1320, 600],[575, 1295]]` → two windows |
+| `cameraMultiRange` | `[{enable, rpt, time}]` — `rpt` = comma-separated weekday digits (`1`–`7`, Mon–Sun); `time` = `[[startMinute, durationMinutes]]` | `[{"enable":1,"rpt":"1,2,3,4,5,6,7","time":[[480,1200]]}]` |
+
+**`updateSettings` keys — general & lock:**
+
+| Key | Values | Description |
+|-----|--------|-------------|
+| `manualLock` | `0/1` | Child lock off/on |
+| `clickOkEnable` | `0/1` | Tap-to-confirm off/on |
+| `language` | `"en_US"`, `"zh_CN"`, … | UI language code |
+| `languages` | `["zh_CN","en_US", …]` | Available language codes (read-only in practice) |
+| `controlSettings` | `0`, `N` | Control panel settings bitmask |
+| `logSwitch` | `0/1` | Device logging off/on |
+| `autoProduct` | `0/1` | Auto product subscription prompt off/on |
+| `distributionDiagram` | `0/1` | Distribution diagram feature off/on |
+
+**`updateSettings` keys — do not disturb & quiet hours:**
+
+| Key | Values | Description |
+|-----|--------|-------------|
+| `disturbMode` | `0/1` | Global do-not-disturb off/on |
+| `disturbConfig` | `0`, `1`, `2`, … | DND schedule mode (pairs with `distrubMultiRange`) |
+| `distrubMultiRange` | `[[startMinute, endMinute], …]` | Global DND time windows |
+| `toneMode` | `0/1` | Scheduled tone/sound mode off/on |
+| `toneConfig` | `0`, `1`, `2`, … | Tone schedule mode (pairs with `toneMultiRange`) |
+| `toneMultiRange` | `[[startMinute, endMinute], …]` | Tone quiet-hour windows |
+| `awDisturbMode` | `0/1` | Auto add-water DND off/on |
+| `awDisturbMultiRange` | `[[startMinute, endMinute], …]` | Auto add-water quiet-hour windows |
+| `wlDisturbMode` | `0/1` | Water-level indicator-light DND off/on |
+| `wlDisturbMultiRange` | `[[startMinute, endMinute], …]` | Water-level indicator-light quiet-hour windows |
+
+**`updateSettings` keys — camera & recording:**
+
+| Key | Values | Description |
+|-----|--------|-------------|
+| `camera` | `0/1` | Camera off/on |
+| `cameraConfig` | `1`, `2`, … | Camera schedule mode (pairs with `cameraMultiRange`) |
+| `cameraMultiRange` | `[{enable, rpt, time}]` | Camera on/off schedule (see schedule encoding above) |
+| `cameraLight` | `0/1` | Camera indicator light off/on |
+| `microphone` | `0/1` | Microphone off/on |
+| `microLight` | `0/1` | Microphone indicator light off/on |
+| `night` | `0/1` | Night vision off/on |
+| `timeDisplay` | `0/1` | Video timestamp overlay off/on |
+| `smartFrame` | `0/1` | Smart framing off/on |
+| `highlight` | `0/1` | Pet tracking / highlight clips off/on |
+| `petDetection` | `0/1` | Pet detection off/on |
+| `drinkDetection` | `0/1` | Drink detection off/on |
+| `upload` | `0/1` | Cloud upload off/on |
+| `preLive` | `0/1` | Pre-live preview off/on |
+| `liveEncrypt` | `0/1` | Live stream encryption off/on |
+
+**`updateSettings` keys — fountain & pump:**
+
+| Key | Values | Description |
+|-----|--------|-------------|
+| `fountainMode` | `0`, `1`, `2`, `3` | Pump operating mode |
+| `fountainTime` | `1`, `2`, `3`, … | Fountain run-duration preset |
+| `sleepTime` | `1`, `2`, `3`, … | Sleep / low-activity duration preset |
+
+**`updateSettings` keys — flush & water change:**
+
+| Key | Values | Description |
+|-----|--------|-------------|
+| `autoFlush` | `0/1` | Automatic flush off/on |
+| `flushIntensity` | `0`, `1`, … | Flush intensity level |
+| `flushCycle` | `N` (days) | Flush interval in days (e.g. `1`, `7`) |
+| `flushTime` | seconds from midnight | Scheduled flush time (e.g. `43200` = 12:00, `50400` = 14:00) |
+| `flushNotify` | `0/1` | Flush notification off/on |
+| `autoWaterChange` | `0/1` | Automatic water change off/on |
+| `waterChangeCycle` | `N` (days) | Water-change interval in days (e.g. `1`, `7`) |
+| `waterChangeTime` | seconds from midnight | Scheduled water-change time (e.g. `36000` = 10:00, `72000` = 20:00) |
+| `waterChangeNotify` | `0/1` | Water-change notification off/on |
+
+**`updateSettings` keys — auto add water:**
+
+| Key | Values | Description |
+|-----|--------|-------------|
+| `addWaterSwitch` | `0/1` | Auto add-water off/on |
+| `addWaterMode` | `0`, `1`, `2`, … | Auto add-water mode |
+| `addWaterNotify` | `0/1` | Add-water notification off/on |
+
+**`updateSettings` keys — notifications:**
+
+| Key | Values | Description |
+|-----|--------|-------------|
+| `drinkNotify` | `0/1` | Drink event notification off/on |
+| `petNotify` | `0/1` | Pet visit notification off/on |
+| `petNotifyInterval` | `0`, `30`, `60`, … | Pet notification minimum interval (minutes); `0` = no throttle |
+| `cleanWaterLackNotify` | `0/1` | Clean-water low notification off/on |
+| `cleanWaterEmptyNotify` | `0/1` | Clean-water empty notification off/on |
+| `wasteWaterFullNotify` | `0/1` | Waste-water full notification off/on |
+| `systemSoundEnable` | `0/1` | System notification sounds off/on |
+| `volume` | `1`–`9` | Speaker volume level |
+
+**`updateSettings` keys — lights & indicators:**
+
+| Key | Values | Description |
+|-----|--------|-------------|
+| `lightMode` | `0/1` | Indicator light schedule mode off/on |
+| `lightConfig` | `0`, `1`, … | Indicator light schedule mode (pairs with `lightMultiRange`) |
+| `lightMultiRange` | `[[startMinute, endMinute], …]` | Indicator light schedule windows |
+| `lightAssist` | `0/1` | Light assist off/on |
+| `cleanWaterLackLight` | `0/1` | Clean-water low indicator light off/on |
+| `cleanWaterEmptyLight` | `0/1` | Clean-water empty indicator light off/on |
+| `wasteWaterFullLight` | `0/1` | Waste-water full indicator light off/on |
+
+**`updateSettings` keys — heater:**
+
+| Key | Values | Description |
+|-----|--------|-------------|
+| `heaterSwitch` | `0/1` | Water heater off/on |
+| `heaterTemp` | `N` (×10 °C) | Heater target temperature (e.g. `300` = 30.0 °C; device `tempRange` in `device_detail` gives allowed bounds) |
+
+**`controlDevice` `start_action` values:**
+
+| `start_action` | Action |
+|----------------|--------|
+| `1` | Drain flush |
+| `2` | Refill |
+| `3` | Drain |
+| `4` | Deep clean |
+
+Example: `POST w7h/controlDevice` with `id={deviceId}&kv={"start_action":2}&type=start`
 
 **Device-specific endpoints:**
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `w7h/controlDevice` | Control device |
+| POST | `w7h/controlDevice` | Control device (`start_action` values above) |
 | POST | `w7h/getConfigInfo` | Get config info |
 | POST | `w7h/getDistributionDiagram` | Get distribution diagram |
 | POST | `w7h/getPetDrinkGraph` | Get pet drink graph |
@@ -736,6 +879,8 @@ Supports: [Device Lifecycle](#device-lifecycle) | [OTA](#ota-firmware-updates) |
 | POST | `w7h/temporary/open/cameraFlush` | Open camera for flush |
 | POST | `w7h/temporary/open/cameraAddWater` | Open camera for add water |
 | POST | `w7h/oss_sts_info_v2` | Get OSS STS info v2 |
+| POST | `w7h/getPetIdentifyInfo` | Get pet identify info |
+| POST | `w7h/updatePetIdentifyInfo` | Update pet identify info |
 | GET | `w7h/timeline/{startDay}/{endDay}` | Get timeline |
 
 ---

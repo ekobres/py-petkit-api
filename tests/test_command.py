@@ -8,8 +8,11 @@ from pypetkitapi.command import (
     LBCommand,
     PurMode,
     DeviceAction,
+    BleWaterFountainAction,
     FountainAction,
+    BLE_WATER_FOUNTAIN_COMMAND,
     FOUNTAIN_COMMAND,
+    CloudWaterFountainCommand,
     CmdData,
     get_endpoint_manual_feed,
     get_endpoint_reset_desiccant,
@@ -18,7 +21,15 @@ from pypetkitapi.command import (
     get_endpoint_save_repeats,
     ACTIONS_MAP,
 )
-from pypetkitapi.const import PetkitEndpoint, FEEDER_MINI, FEEDER, D3, D4H
+from pypetkitapi.const import (
+    PetkitEndpoint,
+    FEEDER_MINI,
+    FEEDER,
+    D3,
+    D4H,
+    W7H,
+    DEVICES_CLOUD_WATER_FOUNTAIN,
+)
 
 
 class TestCommandModule(unittest.TestCase):
@@ -30,6 +41,26 @@ class TestCommandModule(unittest.TestCase):
 
     def test_fountain_command(self):
         self.assertEqual(FountainCommand.CONTROL_DEVICE, "control_device")
+        self.assertEqual(FountainCommand.FILTER_RESET, "filter_reset")
+
+    def test_ble_water_fountain_action_alias(self):
+        self.assertIs(FountainAction, BleWaterFountainAction)
+
+    def test_ble_water_fountain_command_alias(self):
+        self.assertIs(FOUNTAIN_COMMAND, BLE_WATER_FOUNTAIN_COMMAND)
+
+    def test_cloud_water_fountain_command(self):
+        self.assertEqual(CloudWaterFountainCommand.DRAIN_FLUSH, 1)
+        self.assertEqual(CloudWaterFountainCommand.DEEP_CLEAN, 4)
+
+    def test_filter_reset_actions_map(self):
+        self.assertIn(FountainCommand.FILTER_RESET, ACTIONS_MAP)
+        action = ACTIONS_MAP[FountainCommand.FILTER_RESET]
+        self.assertEqual(action.supported_device, DEVICES_CLOUD_WATER_FOUNTAIN)
+
+    def test_control_device_includes_w7h(self):
+        action = ACTIONS_MAP[DeviceCommand.CONTROL_DEVICE]
+        self.assertIn(W7H, action.supported_device)
 
     def test_feeder_command(self):
         self.assertEqual(FeederCommand.CALL_PET, "call_pet")
@@ -56,13 +87,14 @@ class TestCommandModule(unittest.TestCase):
         self.assertEqual(DeviceAction.END, "end_action")
 
     def test_fountain_action(self):
-        self.assertEqual(FountainAction.MODE_NORMAL, "Normal")
-        self.assertEqual(FountainAction.PAUSE, "Pause")
+        self.assertEqual(BleWaterFountainAction.MODE_NORMAL, "Normal")
+        self.assertEqual(BleWaterFountainAction.PAUSE, "Pause")
 
     def test_fountain_command_mapping(self):
-        self.assertIn(FountainAction.PAUSE, FOUNTAIN_COMMAND)
+        self.assertIn(BleWaterFountainAction.PAUSE, BLE_WATER_FOUNTAIN_COMMAND)
         self.assertEqual(
-            FOUNTAIN_COMMAND[FountainAction.PAUSE], [220, 1, 3, 0, 1, 0, 2]
+            BLE_WATER_FOUNTAIN_COMMAND[BleWaterFountainAction.PAUSE],
+            [220, 1, 3, 0, 1, 0, 2],
         )
 
     def test_get_endpoint_manual_feed(self):

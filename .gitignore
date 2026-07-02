@@ -4,9 +4,16 @@
 /data_example/
 /.venv/
 /.tox/
-/.vscode/
+.coverage
+coverage.xml
+node_modules/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/launch.json
 /images/
 /api_responses/
 .idea
 *.pyc
 /patch_mod
+.DS_Store

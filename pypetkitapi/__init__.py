@@ -1,10 +1,16 @@
 """Pypetkit: A Python library for interfacing with PetKit"""
 
+from .ble_water_fountain_container import BleWaterFountain, BleWaterFountainRecord
 from .client import PetKitClient
+from .cloud_water_fountain_container import CloudWaterFountain, CloudWaterFountainRecord
 from .command import (
+    BLE_WATER_FOUNTAIN_COMMAND,
+    BleWaterFountainAction,
+    CloudWaterFountainCommand,
     DeviceAction,
     DeviceCommand,
     FeederCommand,
+    FountainAction,
     FountainCommand,
     LBCommand,
     LitterCommand,
@@ -18,6 +24,8 @@ from .const import (
     D4H,
     D4S,
     D4SH,
+    DEVICES_BLE_WATER_FOUNTAIN,
+    DEVICES_CLOUD_WATER_FOUNTAIN,
     DEVICES_FEEDER,
     DEVICES_LITTER_BOX,
     DEVICES_PURIFIER,
@@ -36,6 +44,7 @@ from .const import (
     T7,
     TEMP_CAMERA_TYPES,
     W5,
+    W7H,
     BluetoothState,
     MediaType,
     RecordType,
@@ -64,12 +73,15 @@ from .water_fountain_container import WaterFountain
 __version__ = "1.27.0"
 
 __all__ = [
+    "BLE_WATER_FOUNTAIN_COMMAND",
     "CTW3",
     "D3",
     "D4",
     "D4H",
     "D4S",
     "D4SH",
+    "DEVICES_BLE_WATER_FOUNTAIN",
+    "DEVICES_CLOUD_WATER_FOUNTAIN",
     "DEVICES_FEEDER",
     "DEVICES_LITTER_BOX",
     "DEVICES_PURIFIER",
@@ -88,12 +100,20 @@ __all__ = [
     "T7",
     "TEMP_CAMERA_TYPES",
     "W5",
+    "W7H",
+    "BleWaterFountain",
+    "BleWaterFountainAction",
+    "BleWaterFountainRecord",
     "BluetoothState",
+    "CloudWaterFountain",
+    "CloudWaterFountainCommand",
+    "CloudWaterFountainRecord",
     "DeviceAction",
     "DeviceCommand",
     "DownloadDecryptMedia",
     "Feeder",
     "FeederCommand",
+    "FountainAction",
     "FountainCommand",
     "IotInfo",
     "LBCommand",
