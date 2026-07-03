@@ -18,7 +18,7 @@ from pypetkitapi.command import (
     get_endpoint_save_repeats,
     ACTIONS_MAP,
 )
-from pypetkitapi.const import PetkitEndpoint, FEEDER_MINI, FEEDER, D3, D4H
+from pypetkitapi.const import PetkitEndpoint, FEEDER_MINI, FEEDER, D3, D4H, W7H
 
 
 class TestCommandModule(unittest.TestCase):
@@ -93,6 +93,12 @@ class TestCommandModule(unittest.TestCase):
     def test_actions_map(self):
         self.assertIn(DeviceCommand.UPDATE_SETTING, ACTIONS_MAP)
         self.assertIsInstance(ACTIONS_MAP[DeviceCommand.UPDATE_SETTING], CmdData)
+
+    def test_actions_map_control_device_supports_w7h(self):
+        """Test that CONTROL_DEVICE supports W7H fountain device."""
+        self.assertIn(DeviceCommand.CONTROL_DEVICE, ACTIONS_MAP)
+        supported = ACTIONS_MAP[DeviceCommand.CONTROL_DEVICE].supported_device
+        self.assertIn(W7H, supported)
 
     def test_feeder_command_save_feed(self):
         """Test that SAVE_FEED is defined in FeederCommand."""
