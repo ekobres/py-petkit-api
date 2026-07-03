@@ -16,6 +16,61 @@ from pypetkitapi.containers import (
 )
 
 
+class ContentSC(BaseModel):
+    """Sub-Sub-class of FountainRecord.
+    FountainRecord -> subContent -> content
+    """
+
+    err: str | None = None
+    mark: int | None = None
+    media: int | None = None
+    result: int | None = None
+    start_reason: int | None = Field(None, alias="startReason")
+    start_time: int | None = Field(None, alias="startTime")
+    upload: int | None = None
+
+
+class LRSubContent(BaseModel):
+    """Subclass of FountainRecord.
+    FountainRecord -> List[subContent]
+    """
+
+    aes_key: str | None = Field(None, alias="aesKey")
+    content: ContentSC | None = None
+    device_id: int | None = Field(None, alias="deviceId")
+    duration: int | None = None
+    enum_event_type: str | None = Field(None, alias="enumEventType")
+    event_id: str | None = Field(None, alias="eventId")
+    event_type: int | None = Field(None, alias="eventType")
+    expire: int | None = None
+    mark: int | None = None
+    media: int | None = None
+    media_api: str | None = Field(None, alias="mediaApi")
+    preview: str | None = None
+    related_event: str | None = Field(None, alias="relatedEvent")
+    storage_space: int | None = Field(None, alias="storageSpace")
+    sub_content: list[Any] | None = Field(None, alias="subContent")
+    timestamp: int | None = None
+    upload: int | None = None
+    user_id: str | None = Field(None, alias="userId")
+
+
+class LRContent(BaseModel):
+    """Dataclass for sub-content of FountainRecord.
+    FountainRecord -> ShitPictures
+    """
+
+    count: int | None = None
+    interval: int | None = None
+    mark: int | None = None
+    media: int | None = None
+    start_time: int | None = Field(None, alias="startTime")
+    time_in: int | None = Field(None, alias="timeIn")
+    time_out: int | None = Field(None, alias="timeOut")
+    upload: int | None = None
+    error: int | None = None
+
+
 class Electricity(BaseModel):
     """Dataclass for electricity details.
     -> WaterFountainData subclass.
@@ -166,6 +221,29 @@ class WaterFountainRecord(BaseModel):
 
     data_type: ClassVar[str] = DEVICE_RECORDS
 
+    aes_key: str | None = Field(None, alias="aesKey")
+    avatar: str | None = None
+    content: LRContent | None = None
+    device_id: int | None = Field(None, alias="deviceId")
+    duration: int | None = None
+    enum_event_type: str | None = Field(None, alias="enumEventType")
+    event_id: str | None = Field(None, alias="eventId")
+    event_type: int | None = Field(None, alias="eventType")
+    expire: int | None = None
+    is_need_upload_video: int | None = Field(None, alias="isNeedUploadVideo")
+    mark: int | None = None
+    media: int | None = None
+    media_api: str | None = Field(None, alias="mediaApi")
+    pet_id: int | None = Field(None, alias="petId")
+    pet_name: str | None = Field(None, alias="petName")
+    preview: str | None = None
+    related_event: str | None = Field(None, alias="relatedEvent")
+    storage_space: int | None = Field(None, alias="storageSpace")
+    sub_content: list[LRSubContent] | None = Field(None, alias="subContent")
+    timestamp: int | None = None
+    toilet_detection: int | None = Field(None, alias="toiletDetection")
+    upload: int | None = None
+    user_id: str | None = Field(None, alias="userId")
     day_time: int | None = Field(None, alias="dayTime")
     stay_time: int | None = Field(None, alias="stayTime")
     work_time: int | None = Field(None, alias="workTime")
@@ -175,6 +253,8 @@ class WaterFountainRecord(BaseModel):
         """Get the endpoint URL for the given device type."""
         if device_type == CTW3:
             return PetkitEndpoint.GET_WORK_RECORD
+        if device_type == W7H:
+            return PetkitEndpoint.GET_DEVICE_RECORD
         return None
 
     @classmethod
@@ -185,6 +265,13 @@ class WaterFountainRecord(BaseModel):
         request_date: str | None = None,
     ) -> dict:
         """Generate query parameters including request_date."""
+        device_type = device.device_type
+        if device_type == W7H:
+            return {
+                "timestamp": int(datetime.now().timestamp()),
+                "deviceId": device.device_id,
+                "type": device.type_code,
+            }
         if request_date is None:
             request_date = datetime.now().strftime("%Y%m%d")
         if device_data is None or not hasattr(device_data, "user_id"):
@@ -290,6 +377,7 @@ class WaterFountain(BaseModel):
     model_code: int | None = Field(None, alias="modelCode")
     bt_mac: str | None = Field(None, alias="btMac")
     multi_config: bool | None = None
+    medias: list | None = None
     state: FountainState | None = None
     cloud_product: CloudProduct | None = Field(None, alias="cloudProduct")
     live_feed: LiveFeed | None = None
