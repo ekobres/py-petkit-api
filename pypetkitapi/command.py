@@ -292,7 +292,7 @@ ACTIONS_MAP = {
             "kv": json.dumps(command),
             "type": list(command.keys())[0].split("_")[0],
         },
-        supported_device=[K2, K3, T3, T4, T5, T6, T7, COZY],
+        supported_device=[K2, K3, T3, T4, T5, T6, T7, COZY, W7H],
     ),
     DeviceCommand.OPEN_CAMERA: CmdData(
         endpoint=PetkitEndpoint.TEMP_OPEN_CAMERA,
