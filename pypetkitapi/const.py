@@ -151,11 +151,13 @@ class RecordType(StrEnum):
     EAT = "eat"
     FEED = "feed"
     MOVE = "move"
-    PET = "pet"
+    PET = "pet"  # Used for litterbox and feeder
     TOILETING = "toileting"
     WASTE_CHECK = "waste_check"
     DISH_BEFORE = "dish_before"
     DISH_AFTER = "dish_after"
+    DRINK_OVER = "drink_over"  # W7H specific
+    PET_DETECTED = "pet_detect"  # W7H specific
 
 
 RecordTypeLST = [
@@ -167,6 +169,8 @@ RecordTypeLST = [
     RecordType.WASTE_CHECK,
     RecordType.DISH_BEFORE,
     RecordType.DISH_AFTER,
+    RecordType.DRINK_OVER,
+    RecordType.PET_DETECTED,
 ]
 
 

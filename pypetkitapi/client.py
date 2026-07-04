@@ -833,11 +833,11 @@ class PetKitClient:
             headers=await self.get_session_id(),
         )
 
-        # Workaround for the litter box T6 (LitterRecord wraps items in {"list": [...]})
+        # Workaround for the litter box T6 and Fountain AI W7H (LitterRecord wraps items in {"list": [...]})
         if (
             isinstance(response, dict)
             and response.get("list", None)
-            and data_class is LitterRecord
+            and data_class in (LitterRecord, WaterFountainRecord)
         ):
             response = response.get("list", [])
 
