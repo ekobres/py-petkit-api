@@ -548,7 +548,7 @@ class MediaManager:
             date_str = await self.get_date_from_ts(timestamp)
 
             if getattr(record, "enum_event_type", None) == "pet_detect":
-                event_type = RecordType.PET_DETECTED
+                event_type = RecordType.PET_DETECT
             else:
                 event_type = RecordType.DRINK_OVER
 

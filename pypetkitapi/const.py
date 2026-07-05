@@ -157,7 +157,7 @@ class RecordType(StrEnum):
     DISH_BEFORE = "dish_before"
     DISH_AFTER = "dish_after"
     DRINK_OVER = "drink_over"  # W7H specific
-    PET_DETECTED = "pet_detect"  # W7H specific
+    PET_DETECT = "pet_detect"  # W7H specific
 
 
 RecordTypeLST = [
@@ -170,7 +170,7 @@ RecordTypeLST = [
     RecordType.DISH_BEFORE,
     RecordType.DISH_AFTER,
     RecordType.DRINK_OVER,
-    RecordType.PET_DETECTED,
+    RecordType.PET_DETECT,
 ]
 
 
