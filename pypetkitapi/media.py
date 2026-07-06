@@ -552,7 +552,7 @@ class MediaManager:
             else:
                 event_type = RecordType.DRINK_OVER
 
-            filepath = f"{fountain_id}/{date_str}/{event_type.name.lower()}"
+            filepath = f"{fountain_id}/{date_str}/{event_type}"
             media_files.append(
                 MediaCloud(
                     event_id=f"{fountain_id}_{record.timestamp}",
