@@ -39,7 +39,7 @@ For the Python client library that implements this API, see the [main README](RE
 - **Water Fountains**
   - [EverSweet 3 Pro / Solo 2 (W5)](#eversweet-3-pro--solo-2-w5---w5)
   - [EverSweet Max Cordless (CTW3)](#eversweet-max-cordless-ctw3---ctw3)
-  - [EverSweet Max 2 UVC (W7H)](#eversweet-max-2-uvc-w7h---w7h)
+  - [EverSweet Ultra AI (W7H)](#eversweet-max-2-uvc-w7h---w7h)
 - **Air Purifiers**
   - [Air Purifier K2](#air-purifier-k2---k2)
   - [Air Purifier K3](#air-purifier-k3---k3)
@@ -105,7 +105,7 @@ The base URL can be overridden per-device via regional gateways (fetched from `v
 | 26  | `d4h/`        | YumShare Solo with Camera (D4H)         |
 | 27  | `t6/`         | Purobot Max Pro 2 / PuraMax 2 (T6)      |
 | 28  | `t7/`         | Purobot Crystal Duo (T7)                |
-| 29  | `w7h/`        | EverSweet Max 2 UVC (W7H)               |
+| 29  | `w7h/`        | Eversweet Ultra AI (W7H)                |
 | 30  | `w7/`         | W7 (newer variant)                      |
 
 ---
@@ -738,6 +738,26 @@ Supports: [Device Lifecycle](#device-lifecycle) | [OTA](#ota-firmware-updates) |
 | POST   | `w7h/oss_sts_info_v2`               | Get OSS STS info v2       |
 | GET    | `w7h/timeline/{startDay}/{endDay}`  | Get timeline              |
 
+Flow Settings :
+{"fountainMode": 0} => Do not flow
+{"fountainMode": 3} => Motion Activated
+{"fountainMode": 2} => Intermittent
+{"fountainMode": 1} => Continuous
+
+kv: '{"start_action":2}' => Refill
+"workState": {
+  "workMode": 2,
+  "workReason": 2,
+  "workProcess": 10,
+  "stopTime": 0,
+  "safeWarn": -1
+}
+kv: '{"start_action":3}' => Drain
+
+Drain & Flush Cycle :
+kv: '{"flushCycle": 6}' (from 1 to 7)
+Drain and Refill :
+kv: '{"waterChangeCycle": 4}'(from 1 to 7)
 ---
 
 ## Air Purifiers
