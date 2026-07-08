@@ -738,21 +738,23 @@ Supports: [Device Lifecycle](#device-lifecycle) | [OTA](#ota-firmware-updates) |
 | POST   | `w7h/oss_sts_info_v2`               | Get OSS STS info v2       |
 | GET    | `w7h/timeline/{startDay}/{endDay}`  | Get timeline              |
 
-Flow Settings :
+Flow Settings `w7h/controlDevice` :
 {"fountainMode": 0} => Do not flow
 {"fountainMode": 3} => Motion Activated
 {"fountainMode": 2} => Intermittent
 {"fountainMode": 1} => Continuous
 
+kv: '{"start_action":1}' => Drain And Flush
 kv: '{"start_action":2}' => Refill
 "workState": {
-  "workMode": 2,
-  "workReason": 2,
-  "workProcess": 10,
-  "stopTime": 0,
-  "safeWarn": -1
+"workMode": 2,
+"workReason": 2,
+"workProcess": 10,
+"stopTime": 0,
+"safeWarn": -1
 }
 kv: '{"start_action":3}' => Drain
+kv: '{"start_action":3}' => DeepClean
 
 Drain & Flush Cycle :
 kv: '{"flushCycle": 6}' (from 1 to 7)
