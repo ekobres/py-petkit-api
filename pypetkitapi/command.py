@@ -122,7 +122,9 @@ class DeviceAction(StrEnum):
 
 
 class FountainAction(StrEnum):
-    """Fountain Action"""
+    """Actions specific to BLE fountains.
+    These actions are executed over BLE relay through the cloud.
+    """
 
     MODE_NORMAL = "Normal"
     MODE_SMART = "Smart"
@@ -143,11 +145,11 @@ class FountainAction(StrEnum):
 
 
 class FountainActionWIFI(IntEnum):
-    """FountainCommand
-    For W7H only
+    """Actions specific to WIFI fountains.
+    These actions are executed over the cloud.
+    Apply only for W7H
     """
 
-    # For W7H
     DRAIN_AND_FLUSH = 1
     REFILL = 2
     DRAIN = 3
