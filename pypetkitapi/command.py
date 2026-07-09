@@ -28,6 +28,7 @@ from pypetkitapi.const import (
     T6,
     T7,
     TEMP_CAMERA_TYPES,
+    W7H,
     PetkitEndpoint,
 )
 
@@ -45,6 +46,7 @@ class FountainCommand(StrEnum):
     """Device Command"""
 
     CONTROL_DEVICE = "control_device"
+    RESET_FILTER = "reset_filter"
 
 
 class FeederCommand(StrEnum):
@@ -120,7 +122,9 @@ class DeviceAction(StrEnum):
 
 
 class FountainAction(StrEnum):
-    """Fountain Action"""
+    """Actions specific to BLE fountains.
+    These actions are executed over BLE relay through the cloud.
+    """
 
     MODE_NORMAL = "Normal"
     MODE_SMART = "Smart"
@@ -138,6 +142,18 @@ class FountainAction(StrEnum):
     LIGHT_HIGH = "Light High"
     LIGHT_ON = "Light On"
     LIGHT_OFF = "Light Off"
+
+
+class FountainActionWIFI(IntEnum):
+    """Actions specific to WIFI fountains.
+    These actions are executed over the cloud.
+    Apply only for W7H
+    """
+
+    DRAIN_AND_FLUSH = 1
+    REFILL = 2
+    DRAIN = 3
+    DEEP_CLEAN = 4
 
 
 FOUNTAIN_COMMAND = {
@@ -278,7 +294,7 @@ ACTIONS_MAP = {
             "kv": json.dumps(command),
             "type": list(command.keys())[0].split("_")[0],
         },
-        supported_device=[K2, K3, T3, T4, T5, T6, T7, COZY],
+        supported_device=[K2, K3, T3, T4, T5, T6, T7, COZY, W7H],
     ),
     DeviceCommand.OPEN_CAMERA: CmdData(
         endpoint=PetkitEndpoint.TEMP_OPEN_CAMERA,
@@ -419,5 +435,12 @@ ACTIONS_MAP = {
             "kv": json.dumps(setting),
         },
         supported_device=[PET],
+    ),
+    FountainCommand.RESET_FILTER: CmdData(
+        endpoint=PetkitEndpoint.RESET_FILTER_FOUNTAIN,
+        params=lambda device: {
+            "deviceId": device.id,
+        },
+        supported_device=[W7H],
     ),
 }

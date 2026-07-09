@@ -42,6 +42,7 @@ W4 = "w4"
 W5 = "w5"
 CTW2 = "ctw2"
 CTW3 = "ctw3"
+W7H = "w7h"
 K2 = "k2"
 K3 = "k3"
 PET = "pet"
@@ -56,7 +57,9 @@ FEEDER_WITH_CAMERA = [D4H, D4SH]
 TEMP_CAMERA_TYPES = [D4H, D4SH, T5, T6]
 DEVICES_FEEDER = [FEEDER, FEEDER_MINI, D3, D4, D4S, D4H, D4SH]
 # Water Fountain
-DEVICES_WATER_FOUNTAIN = [W4, W5, CTW2, CTW3]
+DEVICES_WATER_FOUNTAIN = [W4, W5, CTW2, CTW3, W7H]
+FOUNTAIN_WITH_CAMERA_NO_CAMERA = [W4, W5, CTW2, CTW3]
+FOUNTAIN_WITH_CAMERA = [W7H]
 # Purifier
 DEVICES_PURIFIER = [K2, K3]
 # All devices
@@ -148,11 +151,13 @@ class RecordType(StrEnum):
     EAT = "eat"
     FEED = "feed"
     MOVE = "move"
-    PET = "pet"
+    PET = "pet"  # Used for litterbox and feeder
     TOILETING = "toileting"
     WASTE_CHECK = "waste_check"
     DISH_BEFORE = "dish_before"
     DISH_AFTER = "dish_after"
+    DRINK_OVER = "drink_over"  # W7H specific
+    PET_DETECT = "pet_detect"  # W7H specific
 
 
 RecordTypeLST = [
@@ -164,6 +169,8 @@ RecordTypeLST = [
     RecordType.WASTE_CHECK,
     RecordType.DISH_BEFORE,
     RecordType.DISH_AFTER,
+    RecordType.DRINK_OVER,
+    RecordType.PET_DETECT,
 ]
 
 
@@ -212,6 +219,12 @@ class PetkitEndpoint(StrEnum):
     # Fountain & Litter Box
     CONTROL_DEVICE = "controlDevice"
     GET_WORK_RECORD = "getWorkRecord"
+
+    # Fountain video AI
+    RESET_FILTER_FOUNTAIN = "filterReset"
+    RESET_PUMP_CYCLE = "resetCyclePump"
+    RESET_LIFT_VALVE = "resetLiftValve"
+    CLEAR_CWT_WARNING = "cwtLightWarnClear"
 
     # Litter Box
     DEODORANT_RESET = "deodorantReset"  # For N50 only

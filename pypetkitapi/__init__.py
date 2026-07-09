@@ -5,6 +5,7 @@ from .command import (
     DeviceAction,
     DeviceCommand,
     FeederCommand,
+    FountainActionWIFI,
     FountainCommand,
     LBCommand,
     LitterCommand,
@@ -25,6 +26,7 @@ from .const import (
     FEEDER,
     FEEDER_MINI,
     FEEDER_WITH_CAMERA,
+    FOUNTAIN_WITH_CAMERA,
     K2,
     K3,
     LITTER_NO_CAMERA,
@@ -36,6 +38,7 @@ from .const import (
     T7,
     TEMP_CAMERA_TYPES,
     W5,
+    W7H,
     BluetoothState,
     MediaType,
     RecordType,
@@ -61,7 +64,7 @@ from .media import DownloadDecryptMedia, MediaCloud, MediaFile, MediaManager
 from .purifier_container import Purifier
 from .water_fountain_container import WaterFountain
 
-__version__ = "1.27.0"
+__version__ = "1.28.0"
 
 __all__ = [
     "CTW3",
@@ -77,6 +80,7 @@ __all__ = [
     "FEEDER",
     "FEEDER_MINI",
     "FEEDER_WITH_CAMERA",
+    "FOUNTAIN_WITH_CAMERA",
     "K2",
     "K3",
     "LITTER_NO_CAMERA",
@@ -88,12 +92,14 @@ __all__ = [
     "T7",
     "TEMP_CAMERA_TYPES",
     "W5",
+    "W7H",
     "BluetoothState",
     "DeviceAction",
     "DeviceCommand",
     "DownloadDecryptMedia",
     "Feeder",
     "FeederCommand",
+    "FountainActionWIFI",
     "FountainCommand",
     "IotInfo",
     "LBCommand",

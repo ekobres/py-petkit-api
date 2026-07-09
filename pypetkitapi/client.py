@@ -35,6 +35,7 @@ from pypetkitapi.const import (
     DEVICES_WATER_FOUNTAIN,
     ERR_KEY,
     FEEDER_WITH_CAMERA,
+    FOUNTAIN_WITH_CAMERA,
     LITTER_NO_CAMERA,
     LITTER_WITH_CAMERA,
     LIVE_DATA,
@@ -709,6 +710,9 @@ class PetKitClient:
                 record_tasks.append(
                     self._fetch_device_data(device, WaterFountainRecord)
                 )
+                self._add_fountain_task_by_type(
+                    record_tasks, media_tasks, device_type, device
+                )
 
             elif device_type in DEVICES_PURIFIER:
                 main_tasks.append(self._fetch_device_data(device, Purifier))
@@ -746,6 +750,22 @@ class PetKitClient:
         :param device: Device data.
         """
         if device_type in FEEDER_WITH_CAMERA:
+            media_tasks.append(self._fetch_media(device))
+
+    def _add_fountain_task_by_type(
+        self,
+        record_tasks: list,
+        media_tasks: list,
+        device_type: str,
+        device: Device,
+    ) -> None:
+        """Add specific tasks fountain devices.
+        :param record_tasks: List of record tasks.
+        :param media_tasks: List of media tasks.
+        :param device_type: Device type.
+        :param device: Device data.
+        """
+        if device_type in FOUNTAIN_WITH_CAMERA:
             media_tasks.append(self._fetch_media(device))
 
     async def _execute_stats_tasks(self) -> None:
@@ -813,11 +833,11 @@ class PetKitClient:
             headers=await self.get_session_id(),
         )
 
-        # Workaround for the litter box T6 (LitterRecord wraps items in {"list": [...]})
+        # Workaround for the litter box T6 and Fountain AI W7H (LitterRecord wraps items in {"list": [...]})
         if (
             isinstance(response, dict)
             and response.get("list", None)
-            and data_class is LitterRecord
+            and data_class in (LitterRecord, WaterFountainRecord)
         ):
             response = response.get("list", [])
 

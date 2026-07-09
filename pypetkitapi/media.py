@@ -20,6 +20,7 @@ from Crypto.Util.Padding import unpad
 from pypetkitapi import Feeder, Litter, PetKitClient, RecordsItems, RecordType
 from pypetkitapi.const import (
     FEEDER_WITH_CAMERA,
+    FOUNTAIN_WITH_CAMERA,
     LITTER_WITH_CAMERA,
     PTK_DBG,
     MediaType,
@@ -27,6 +28,7 @@ from pypetkitapi.const import (
     RecordTypeLST,
 )
 from pypetkitapi.litter_container import LitterRecord
+from pypetkitapi.water_fountain_container import WaterFountain, WaterFountainRecord
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -93,7 +95,7 @@ class MediaManager:
             self._media_index[index_key] = media_file
 
     async def gather_all_media_from_cloud(
-        self, devices: list[Feeder | Litter]
+        self, devices: list[Feeder | Litter | WaterFountain]
     ) -> list[MediaCloud]:
         """Get all media files from all devices and return a list of MediaCloud.
         :param devices: List of devices
@@ -125,6 +127,12 @@ class MediaManager:
                         "Litter %s does not support media file extraction",
                         device.name,
                     )
+            elif isinstance(device, WaterFountain):
+                if (
+                    device.device_nfo
+                    and device.device_nfo.device_type in FOUNTAIN_WITH_CAMERA
+                ):
+                    media_files.extend(await self._process_fountain(device))
 
         return media_files
 
@@ -503,8 +511,68 @@ class MediaManager:
 
         return media_files
 
+    async def _process_fountain(self, fountain: WaterFountain) -> list[MediaCloud]:
+        """Process media files for a fountain device.
+        :param fountain: WaterFountain device object
+        :return: List of MediaCloud objects for the device
+        """
+        media_files: list[MediaCloud] = []
+        records = fountain.device_records
+        fountain_id = fountain.device_nfo.device_id if fountain.device_nfo else None
+        device_type = fountain.device_nfo.device_type if fountain.device_nfo else None
+        user_id = fountain.user.id if fountain.user else None
+        cp_sub = self.is_subscription_active(fountain)
+
+        if not fountain_id or not device_type or not user_id:
+            _LOGGER.warning(
+                "Missing one or more of mandatory information : fountain_id/device_id/user_id for record"
+            )
+            return media_files
+
+        if not records:
+            _LOGGER.debug("No records found for %s", fountain.name)
+            return media_files
+
+        for record in records:
+            if not isinstance(record, WaterFountainRecord):
+                _LOGGER.debug("Record is empty")
+                continue
+            if not record.event_id or not record.aes_key:
+                _LOGGER.debug("Missing event_id or aes_key for record item")
+                continue
+            if record.timestamp is None:
+                _LOGGER.debug("Missing timestamp for record item")
+                continue
+
+            timestamp = record.timestamp or None
+            date_str = await self.get_date_from_ts(timestamp)
+
+            if getattr(record, "enum_event_type", None) == "pet_detect":
+                event_type = RecordType.PET_DETECT
+            else:
+                event_type = RecordType.DRINK_OVER
+
+            filepath = f"{fountain_id}/{date_str}/{event_type.name.lower()}"
+            media_files.append(
+                MediaCloud(
+                    event_id=f"{fountain_id}_{record.timestamp}",
+                    event_type=event_type,
+                    device_id=fountain_id,
+                    user_id=user_id,
+                    image=record.preview,
+                    video=await self.construct_video_url(
+                        device_type, record, user_id, cp_sub
+                    ),
+                    filepath=filepath,
+                    aes_key=record.aes_key,
+                    timestamp=record.timestamp,
+                )
+            )
+
+        return media_files
+
     @staticmethod
-    def is_subscription_active(device: Feeder | Litter) -> bool:
+    def is_subscription_active(device: Feeder | Litter | WaterFountain) -> bool:
         """Check if the subscription is active based on the work_indate timestamp.
         :param device: Device object
         :return: True if the subscription is active, False otherwise
@@ -529,7 +597,7 @@ class MediaManager:
     async def construct_video_url(
         self,
         device_type: str | None,
-        event_data: LitterRecord | RecordsItems,
+        event_data: LitterRecord | RecordsItems | WaterFountainRecord,
         user_id: int,
         cp_sub: bool | None,
     ) -> str | None:
